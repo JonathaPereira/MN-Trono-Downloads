@@ -1,0 +1,25 @@
+name: Keep current and previous Windows installers
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: installer-retention
+  cancel-in-progress: false
+jobs:
+  retain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const {planReleaseRetention}=require('./maintenance/download-retention.cjs');
+            const releases=await github.paginate(github.rest.repos.listReleases,{...context.repo,per_page:100});
+            const plan=planReleaseRetention(releases);
+            for(const asset of plan.remove)await github.rest.repos.deleteReleaseAsset({...context.repo,asset_id:asset.id});
+            core.notice(`Kept ${plan.keep.join(', ')}; removed ${plan.remove.length} old installer files; reclaimed ${(plan.reclaimBytes/1024/1024).toFixed(1)} MiB.`);
